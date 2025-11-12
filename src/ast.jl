@@ -1,3 +1,5 @@
+include("types.jl")
+
 @enum ExprHead begin
     ConstBool   # args: [value]
     Var         # args: [Symbol]
@@ -28,6 +30,8 @@ end
 
 struct FunctionDef
     params::Vector{Symbol}
+    param_types::Vector{LFType}
+    return_type::LFType
     body::LFExpr
 end
 
