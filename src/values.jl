@@ -1,26 +1,26 @@
-abstract type Val end
+abstract type LFVal end
 
-struct BoolVal <: Val
+struct BoolVal <: LFVal
     value::Bool
 end
 
-struct UnitVal <: Val end
+struct UnitVal <: LFVal end
 
-struct LocVal <: Val
+struct LocVal <: LFVal
     loc::Int
 end
 
-struct NilVal <: Val end
+struct NilVal <: LFVal end
 
-struct PairVal <: Val
-    fst::Val
-    snd::Val
+struct PairVal <: LFVal
+    fst::LFVal
+    snd::LFVal
 end
 
-struct InlVal <: Val
-    value::Val
+struct InlVal <: LFVal
+    value::LFVal
 end
 
-struct InrVal <: Val
-    value::Val
+struct InrVal <: LFVal
+    value::LFVal
 end

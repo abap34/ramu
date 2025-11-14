@@ -2,7 +2,7 @@ import Base
 
 abstract type LFType end
 
-struct TypeVar
+struct LFTypeVar
     name::Symbol
 end
 
@@ -23,14 +23,16 @@ const subscripts = Dict(
 fresh_typevar = let
     counter = 0
     () -> begin
-        name = Symbol(typevarnames[mod1(counter + 1, length(typevarnames))] *
-                      join(subscripts[d] for d in digits(div(counter, length(typevarnames)))))
+        name = Symbol(
+            typevarnames[mod1(counter + 1, length(typevarnames))] *
+                join(subscripts[d] for d in digits(div(counter, length(typevarnames))))
+        )
         counter += 1
-        return TypeVar(name)
+        return LFTypeVar(name)
     end
 end
 
-const TypeLike = Union{LFType, TypeVar}
+const TypeLike = Union{LFType, LFTypeVar}
 
 # A ::= 1 | B | List A | A ⊗ A | A + A
 # F ::= (A1, A2, ..., An) -> A
@@ -55,7 +57,7 @@ struct FuncType <: LFType
     return_type::TypeLike
 end
 
-Base.show(io::IO, tv::TypeVar) = print(io, tv.name)
+Base.show(io::IO, tv::LFTypeVar) = print(io, tv.name)
 Base.show(io::IO, ::UnitType) = print(io, "1")
 Base.show(io::IO, ::BoolType) = print(io, "B")
 Base.show(io::IO, t::ListType) = print(io, "List ", t.elem_type)
@@ -72,12 +74,11 @@ Base.show(io::IO, t::FuncType) = begin
     print(io, ") -> ", t.return_type)
 end
 
-Base.:(==)(t1::TypeVar, t2::TypeVar) = t1.name == t2.name
+Base.:(==)(t1::LFTypeVar, t2::LFTypeVar) = t1.name == t2.name
 Base.:(==)(::UnitType, ::UnitType) = true
 Base.:(==)(::BoolType, ::BoolType) = true
 Base.:(==)(t1::ListType, t2::ListType) = t1.elem_type == t2.elem_type
 Base.:(==)(t1::ProductType, t2::ProductType) = t1.fst_type == t2.fst_type && t1.snd_type == t2.snd_type
 Base.:(==)(t1::SumType, t2::SumType) = t1.inl_type == t2.inl_type && t1.inr_type == t2.inr_type
 Base.:(==)(t1::FuncType, t2::FuncType) = t1.param_types == t2.param_types && t1.return_type == t2.return_type
-Base.:(==)(::T, ::S) where {T<:LFType, S<:LFType} = false
-
+Base.:(==)(::T, ::S) where {T <: LFType, S <: LFType} = false
