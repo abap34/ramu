@@ -1,2 +1,17 @@
+name = "ramu"
+uuid = "16d1ab79-5db1-411e-b263-23c9cbf64344"
+version = "0.1.0"
+authors = ["abap34 <abap0002@gmail.com>"]
+
 [deps]
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+
+[compat]
+JuMP = "1.29.3"
+julia = "1.12"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
