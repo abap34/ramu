@@ -1,6 +1,3 @@
-include("types.jl")
-include("ast.jl")
-
 struct TypeEnv
     types::Dict{Symbol, TypeLike}
 end
@@ -28,7 +25,7 @@ const Subst = Dict{Symbol, TypeLike}
 const InferResult = Tuple{TypeLike, Vector{Constraint}}
 
 function apply_subst(s::Subst, t::TypeLike)::TypeLike
-    if t isa TypeVar
+    if t isa LFTypeVar
         return haskey(s, t.name) ? apply_subst(s, s[t.name]) : t
     elseif t isa UnitType || t isa BoolType
         return t
@@ -66,7 +63,7 @@ function compose(s1::Subst, s2::Subst)::Subst
 end
 
 function occurs(tv::Symbol, t::TypeLike)::Bool
-    if t isa TypeVar
+    if t isa LFTypeVar
         return t.name == tv
     elseif t isa UnitType || t isa BoolType
         return false
@@ -88,14 +85,14 @@ function unify(t1::TypeLike, t2::TypeLike)::Subst
         return Subst()
     end
 
-    if t1 isa TypeVar
+    if t1 isa LFTypeVar
         if occurs(t1.name, t2)
             error("Occurs check failed: $(t1.name) occurs in $t2")
         end
         return Subst(t1.name => t2)
     end
 
-    if t2 isa TypeVar
+    if t2 isa LFTypeVar
         if occurs(t2.name, t1)
             error("Occurs check failed: $(t2.name) occurs in $t1")
         end
@@ -158,7 +155,7 @@ function infer(e::LFExpr, Γ::TypeEnv, Σ::ToplevelEnv)::InferResult
         end
         return (Γ.types[x], Constraint[])
 
-    elseif e.head == Pair
+    elseif e.head == LFPair
         x1, x2 = e.args[1], e.args[2]
         t1, c1 = infer(LFExpr(Var, [x1]), Γ, Σ)
         t2, c2 = infer(LFExpr(Var, [x2]), Γ, Σ)
@@ -273,7 +270,7 @@ function infer(e::LFExpr, Γ::TypeEnv, Σ::ToplevelEnv)::InferResult
 
     elseif e.head == FunApply
         fname = e.args[1]
-        arg_names = e.args[2:end]
+        arg_exprs = e.args[2:end]
 
         if !haskey(Σ.functions, fname)
             error("Undefined function: $fname")
@@ -281,13 +278,18 @@ function infer(e::LFExpr, Γ::TypeEnv, Σ::ToplevelEnv)::InferResult
 
         fsig = Σ.functions[fname]
 
-        if length(arg_names) != length(fsig.param_types)
-            error("Function $fname expects $(length(fsig.param_types)) arguments, got $(length(arg_names))")
+        if length(arg_exprs) != length(fsig.param_types)
+            error("Function $fname expects $(length(fsig.param_types)) arguments, got $(length(arg_exprs))")
         end
 
         constraints = Constraint[]
-        for (arg_name, expected_type) in zip(arg_names, fsig.param_types)
-            t_arg, c_arg = infer(LFExpr(Var, [arg_name]), Γ, Σ)
+        for (arg_expr, expected_type) in zip(arg_exprs, fsig.param_types)
+            # Each argument can be an expression or a Symbol
+            if arg_expr isa Symbol
+                t_arg, c_arg = infer(LFExpr(Var, [arg_expr]), Γ, Σ)
+            else
+                t_arg, c_arg = infer(arg_expr, Γ, Σ)
+            end
             append!(constraints, c_arg)
             push!(constraints, Constraint(t_arg, expected_type))
         end

@@ -1,17 +1,12 @@
-include("ast.jl")
-include("values.jl")
-
 struct InterpreterState
-    S::Dict{Symbol, Val}
-    σ::Dict{Int, Val}
+    S::Dict{Symbol, LFVal}
+    σ::Dict{Int, LFVal}
     m::Int
 end
 
-function alloc_location(σ::Dict{Int, Val})::Int
-    isempty(σ) ? 1 : maximum(keys(σ)) + 1
-end
+alloc_location(σ::Dict{Int, LFVal})::Int = isempty(σ) ? 1 : maximum(keys(σ)) + 1
 
-function compute_size(v::Val)::Int
+function compute_size(v::LFVal)::Int
     if v isa BoolVal || v isa UnitVal || v isa NilVal || v isa LocVal
         return 1
     elseif v isa PairVal
@@ -23,7 +18,19 @@ function compute_size(v::Val)::Int
     end
 end
 
-function eval_expr(e::LFExpr, state::InterpreterState, prog::Program)::Tuple{Val, InterpreterState}
+function eval_expr(
+    e::LFExpr,
+    state::InterpreterState,
+    prog::Program;
+    trace_callback::Union{Function, Nothing} = nothing,
+    depth::Int = 0
+)::Tuple{LFVal, InterpreterState}
+    # トレース記録
+    !isnothing(trace_callback) && trace_callback(e, state, depth)
+
+    # 再帰用のヘルパー関数（パラメータを自動で引き継ぐ）
+    recurse(expr, st) = eval_expr(expr, st, prog; trace_callback, depth=depth+1)
+
     S, σ, m = state.S, state.σ, state.m
 
     if e.head == ConstBool
@@ -39,145 +46,154 @@ function eval_expr(e::LFExpr, state::InterpreterState, prog::Program)::Tuple{Val
     elseif e.head == Nil
         return (NilVal(), state)
 
-    elseif e.head == Pair
-        x1, x2 = e.args[1], e.args[2]
-        return (PairVal(S[x1], S[x2]), state)
+    elseif e.head == LFPair
+        e1, e2 = e.args[1], e.args[2]
+        v1, state1 = recurse(e1, state)
+        v2, state2 = recurse(e2, state1)
+        return (PairVal(v1, v2), state2)
 
     elseif e.head == Inl
-        x = e.args[1]
-        return (InlVal(S[x]), state)
+        e1 = e.args[1]
+        v1, state1 = recurse(e1, state)
+        return (InlVal(v1), state1)
 
     elseif e.head == Inr
-        x = e.args[1]
-        return (InrVal(S[x]), state)
+        e1 = e.args[1]
+        v1, state1 = recurse(e1, state)
+        return (InrVal(v1), state1)
 
     elseif e.head == Cons
-        xh, xt = e.args[1], e.args[2]
-        v = PairVal(S[xh], S[xt])
+        eh, et = e.args[1], e.args[2]
+        vh, state1 = recurse(eh, state)
+        vt, state2 = recurse(et, state1)
+        v = PairVal(vh, vt)
         size = compute_size(v)
 
-        if m < size
-            error("Insufficient heap space: need $size, have $m")
+        σ2, m2 = state2.σ, state2.m
+        if m2 < size
+            error("Insufficient heap space: need $size, have $m2")
         end
 
-        ℓ = alloc_location(σ)
-        new_σ = copy(σ)
+        ℓ = alloc_location(σ2)
+        new_σ = copy(σ2)
         new_σ[ℓ] = v
-        new_m = m - size
-        new_state = InterpreterState(S, new_σ, new_m)
+        new_m = m2 - size
+        new_state = InterpreterState(state2.S, new_σ, new_m)
 
         return (LocVal(ℓ), new_state)
 
     elseif e.head == Let
         x, e1, e2 = e.args[1], e.args[2], e.args[3]
-        v1, state1 = eval_expr(e1, state, prog)
+        v1, state1 = recurse(e1, state)
         new_S = copy(state1.S)
         new_S[x] = v1
         new_state = InterpreterState(new_S, state1.σ, state1.m)
-        return eval_expr(e2, new_state, prog)
+        return recurse(e2, new_state)
 
     elseif e.head == If
-        x, et, ef = e.args[1], e.args[2], e.args[3]
-        cond = S[x]
+        econd, et, ef = e.args[1], e.args[2], e.args[3]
+        cond, state1 = recurse(econd, state)
         if !(cond isa BoolVal)
             error("Condition must be a boolean value")
         end
         if cond.value != false
-            return eval_expr(et, state, prog)
+            return recurse(et, state1)
         else
-            return eval_expr(ef, state, prog)
+            return recurse(ef, state1)
         end
 
     elseif e.head == Match
-        x, e_nil, (xh, xt), e_cons = e.args[1], e.args[2], e.args[3], e.args[4]
-        val = S[x]
+        ematched, e_nil, (xh, xt), e_cons = e.args[1], e.args[2], e.args[3], e.args[4]
+        val, state1 = recurse(ematched, state)
 
         if val isa NilVal
-            return eval_expr(e_nil, state, prog)
+            return recurse(e_nil, state1)
         elseif val isa LocVal
             ℓ = val.loc
-            pair = σ[ℓ]
+            σ1 = state1.σ
+            pair = σ1[ℓ]
             if !(pair isa PairVal)
                 error("Expected PairVal at location $ℓ")
             end
             vh, vt = pair.fst, pair.snd
 
             freed_size = compute_size(pair)
-            new_σ = copy(σ)
+            new_σ = copy(σ1)
             delete!(new_σ, ℓ)
-            new_m = m + freed_size
+            new_m = state1.m + freed_size
 
-            new_S = copy(S)
+            new_S = copy(state1.S)
             new_S[xh] = vh
             new_S[xt] = vt
             new_state = InterpreterState(new_S, new_σ, new_m)
 
-            return eval_expr(e_cons, new_state, prog)
+            return recurse(e_cons, new_state)
         else
             error("Match expects NilVal or LocVal, got $(typeof(val))")
         end
 
     elseif e.head == MatchPrime
-        x, e_nil, (xh, xt), e_cons = e.args[1], e.args[2], e.args[3], e.args[4]
-        val = S[x]
+        ematched, e_nil, (xh, xt), e_cons = e.args[1], e.args[2], e.args[3], e.args[4]
+        val, state1 = recurse(ematched, state)
 
         if val isa NilVal
-            return eval_expr(e_nil, state, prog)
+            return recurse(e_nil, state1)
         elseif val isa LocVal
             ℓ = val.loc
-            pair = σ[ℓ]
+            σ1 = state1.σ
+            pair = σ1[ℓ]
             if !(pair isa PairVal)
                 error("Expected PairVal at location $ℓ")
             end
             vh, vt = pair.fst, pair.snd
 
-            new_S = copy(S)
+            new_S = copy(state1.S)
             new_S[xh] = vh
             new_S[xt] = vt
-            new_state = InterpreterState(new_S, σ, m)
+            new_state = InterpreterState(new_S, σ1, state1.m)
 
-            return eval_expr(e_cons, new_state, prog)
+            return recurse(e_cons, new_state)
         else
             error("MatchPrime expects NilVal or LocVal, got $(typeof(val))")
         end
 
     elseif e.head == MatchPair
-        x, x1, x2, body = e.args[1], e.args[2], e.args[3], e.args[4]
-        val = S[x]
+        ematched, x1, x2, body = e.args[1], e.args[2], e.args[3], e.args[4]
+        val, state1 = recurse(ematched, state)
 
         if !(val isa PairVal)
             error("MatchPair expects PairVal, got $(typeof(val))")
         end
 
         v1, v2 = val.fst, val.snd
-        new_S = copy(S)
+        new_S = copy(state1.S)
         new_S[x1] = v1
         new_S[x2] = v2
-        new_state = InterpreterState(new_S, σ, m)
+        new_state = InterpreterState(new_S, state1.σ, state1.m)
 
-        return eval_expr(body, new_state, prog)
+        return recurse(body, new_state)
 
     elseif e.head == MatchSum
-        x, y_inl, e_inl, y_inr, e_inr = e.args[1], e.args[2], e.args[3], e.args[4], e.args[5]
-        val = S[x]
+        ematched, y_inl, e_inl, y_inr, e_inr = e.args[1], e.args[2], e.args[3], e.args[4], e.args[5]
+        val, state1 = recurse(ematched, state)
 
         if val isa InlVal
-            new_S = copy(S)
+            new_S = copy(state1.S)
             new_S[y_inl] = val.value
-            new_state = InterpreterState(new_S, σ, m)
-            return eval_expr(e_inl, new_state, prog)
+            new_state = InterpreterState(new_S, state1.σ, state1.m)
+            return recurse(e_inl, new_state)
         elseif val isa InrVal
-            new_S = copy(S)
+            new_S = copy(state1.S)
             new_S[y_inr] = val.value
-            new_state = InterpreterState(new_S, σ, m)
-            return eval_expr(e_inr, new_state, prog)
+            new_state = InterpreterState(new_S, state1.σ, state1.m)
+            return recurse(e_inr, new_state)
         else
             error("MatchSum expects InlVal or InrVal, got $(typeof(val))")
         end
 
     elseif e.head == FunApply
         f = e.args[1]
-        arg_names = e.args[2:end]
+        arg_exprs = e.args[2:end]
 
         if !haskey(prog.functions, f)
             error("Undefined function: $f")
@@ -185,20 +201,29 @@ function eval_expr(e::LFExpr, state::InterpreterState, prog::Program)::Tuple{Val
 
         func_def = prog.functions[f]
 
-        if length(arg_names) != length(func_def.params)
-            error("Function $f expects $(length(func_def.params)) arguments, got $(length(arg_names))")
+        if length(arg_exprs) != length(func_def.params)
+            error("Function $f expects $(length(func_def.params)) arguments, got $(length(arg_exprs))")
         end
 
-        new_S = Dict{Symbol, Val}()
-        for (param, arg_name) in zip(func_def.params, arg_names)
-            if !haskey(S, arg_name)
-                error("Undefined variable: $arg_name")
+        # Evaluate arguments and bind to parameters
+        new_S = Dict{Symbol, LFVal}()
+        for (param, arg_expr) in zip(func_def.params, arg_exprs)
+            # Each argument can be an expression or a Symbol
+            if arg_expr isa Symbol
+                if !haskey(S, arg_expr)
+                    error("Undefined variable: $arg_expr")
+                end
+                new_S[param] = S[arg_expr]
+            else
+                # Evaluate the argument expression
+                arg_val, new_state = recurse(arg_expr, state)
+                state = new_state
+                new_S[param] = arg_val
             end
-            new_S[param] = S[arg_name]
         end
 
-        new_state = InterpreterState(new_S, σ, m)
-        return eval_expr(func_def.body, new_state, prog)
+        new_state = InterpreterState(new_S, state.σ, state.m)
+        return recurse(func_def.body, new_state)
 
     else
         error("Unkown expression head: $(e.head)")
@@ -206,12 +231,13 @@ function eval_expr(e::LFExpr, state::InterpreterState, prog::Program)::Tuple{Val
 end
 
 function run_program(
-    prog::Program;
-    entrypoint::Symbol = :main,
-    initial_stack::Dict{Symbol, Val} = Dict{Symbol, Val}(),
-    initial_heap::Dict{Int, Val} = Dict{Int, Val}(),
-    heap_size::Int = 100
-)::Tuple{Val, InterpreterState}
+        prog::Program;
+        entrypoint::Symbol = :main,
+        initial_stack::Dict{Symbol, LFVal} = Dict{Symbol, LFVal}(),
+        initial_heap::Dict{Int, LFVal} = Dict{Int, LFVal}(),
+        heap_size::Int = 100,
+        trace_callback::Union{Function, Nothing} = nothing
+    )::Tuple{LFVal, InterpreterState}
     if !haskey(prog.functions, entrypoint)
         error("Function $entrypoint not found in program")
     end
@@ -225,7 +251,5 @@ function run_program(
     end
 
     state = InterpreterState(initial_stack, initial_heap, heap_size)
-    return eval_expr(func_def.body, state, prog)
+    return eval_expr(func_def.body, state, prog; trace_callback, depth=0)
 end
-
-
