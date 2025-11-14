@@ -1,6 +1,3 @@
-using Test
-include("../src/inference.jl")
-
 @testset "Function Type Checking Tests" begin
     @testset "Simple function" begin
         # id : B -> B
@@ -37,7 +34,7 @@ include("../src/inference.jl")
             [:x, :y],
             [BoolType(), UnitType()],
             ProductType(BoolType(), UnitType()),
-            LFExpr(Pair, [:x, :y])
+            LFExpr(LFPair, [:x, :y])
         )
 
         prog = Program(Dict(:make_pair => make_pair))
@@ -87,7 +84,7 @@ include("../src/inference.jl")
                 :p,
                 :x,
                 :y,
-                LFExpr(Pair, [:y, :x])
+                LFExpr(LFPair, [:y, :x])
             ])
         )
 

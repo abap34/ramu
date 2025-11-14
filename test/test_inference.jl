@@ -1,6 +1,3 @@
-using Test
-include("../src/inference.jl")
-
 @testset "Type Inference Tests" begin
     @testset "Basic types" begin
         # Bool constant
@@ -31,7 +28,7 @@ include("../src/inference.jl")
         Γ = TypeEnv(Dict(:x => BoolType(), :y => UnitType()))
 
         # (x, y) where x:B, y:1
-        e = LFExpr(Pair, [:x, :y])
+        e = LFExpr(LFPair, [:x, :y])
         t = typeinf(e, Γ)
         @test t == ProductType(BoolType(), UnitType())
     end
@@ -44,36 +41,42 @@ include("../src/inference.jl")
         t = typeinf(e, Γ)
         @test t isa SumType
         @test t.inl_type == BoolType()
-        @test t.inr_type isa TypeVar
+        @test t.inr_type isa LFTypeVar
 
         # inr(x) where x:B should give (α + B) for some α
         e = LFExpr(Inr, [:x])
         t = typeinf(e, Γ)
         @test t isa SumType
-        @test t.inl_type isa TypeVar
+        @test t.inl_type isa LFTypeVar
         @test t.inr_type == BoolType()
     end
 
     @testset "Let binding" begin
         # let x = true in x
-        e = LFExpr(Let, [
-            :x,
-            LFExpr(ConstBool, [true]),
-            LFExpr(Var, [:x])
-        ])
+        e = LFExpr(
+            Let, [
+                :x,
+                LFExpr(ConstBool, [true]),
+                LFExpr(Var, [:x]),
+            ]
+        )
         t = typeinf(e)
         @test t == BoolType()
 
         # let x = * in let y = true in (x, y)
-        e = LFExpr(Let, [
-            :x,
-            LFExpr(Unit, []),
-            LFExpr(Let, [
-                :y,
-                LFExpr(ConstBool, [true]),
-                LFExpr(Pair, [:x, :y])
-            ])
-        ])
+        e = LFExpr(
+            Let, [
+                :x,
+                LFExpr(Unit, []),
+                LFExpr(
+                    Let, [
+                        :y,
+                        LFExpr(ConstBool, [true]),
+                        LFExpr(LFPair, [:x, :y]),
+                    ]
+                ),
+            ]
+        )
         t = typeinf(e)
         @test t == ProductType(UnitType(), BoolType())
     end
@@ -82,11 +85,13 @@ include("../src/inference.jl")
         Γ = TypeEnv(Dict(:cond => BoolType()))
 
         # if cond then * else *
-        e = LFExpr(If, [
-            :cond,
-            LFExpr(Unit, []),
-            LFExpr(Unit, [])
-        ])
+        e = LFExpr(
+            If, [
+                :cond,
+                LFExpr(Unit, []),
+                LFExpr(Unit, []),
+            ]
+        )
         t = typeinf(e, Γ)
         @test t == UnitType()
     end
@@ -95,22 +100,26 @@ include("../src/inference.jl")
         Γ = TypeEnv(Dict(:p => ProductType(BoolType(), UnitType())))
 
         # match p with (x, y) => x
-        e = LFExpr(MatchPair, [
-            :p,
-            :x,
-            :y,
-            LFExpr(Var, [:x])
-        ])
+        e = LFExpr(
+            MatchPair, [
+                :p,
+                :x,
+                :y,
+                LFExpr(Var, [:x]),
+            ]
+        )
         t = typeinf(e, Γ)
         @test t == BoolType()
 
         # match p with (x, y) => y
-        e = LFExpr(MatchPair, [
-            :p,
-            :x,
-            :y,
-            LFExpr(Var, [:y])
-        ])
+        e = LFExpr(
+            MatchPair, [
+                :p,
+                :x,
+                :y,
+                LFExpr(Var, [:y]),
+            ]
+        )
         t = typeinf(e, Γ)
         @test t == UnitType()
     end
@@ -120,23 +129,27 @@ include("../src/inference.jl")
 
         # match s with | inl(x) => x | inr(y) => y
         # This should fail because branches have different types
-        e = LFExpr(MatchSum, [
-            :s,
-            :x,
-            LFExpr(Var, [:x]),  # returns B
-            :y,
-            LFExpr(Var, [:y])   # returns 1
-        ])
+        e = LFExpr(
+            MatchSum, [
+                :s,
+                :x,
+                LFExpr(Var, [:x]),  # returns B
+                :y,
+                LFExpr(Var, [:y]),   # returns 1
+            ]
+        )
         @test_throws ErrorException typeinf(e, Γ)
 
         # match s with | inl(x) => * | inr(y) => *
-        e = LFExpr(MatchSum, [
-            :s,
-            :x,
-            LFExpr(Unit, []),
-            :y,
-            LFExpr(Unit, [])
-        ])
+        e = LFExpr(
+            MatchSum, [
+                :s,
+                :x,
+                LFExpr(Unit, []),
+                :y,
+                LFExpr(Unit, []),
+            ]
+        )
         t = typeinf(e, Γ)
         @test t == UnitType()
     end
@@ -146,13 +159,15 @@ include("../src/inference.jl")
         e = LFExpr(Nil, [])
         t = typeinf(e)
         @test t isa ListType
-        @test t.elem_type isa TypeVar
+        @test t.elem_type isa LFTypeVar
 
         # cons with concrete types
-        Γ = TypeEnv(Dict(
-            :x => BoolType(),
-            :xs => ListType(BoolType())
-        ))
+        Γ = TypeEnv(
+            Dict(
+                :x => BoolType(),
+                :xs => ListType(BoolType())
+            )
+        )
 
         e = LFExpr(Cons, [:x, :xs])
         t = typeinf(e, Γ)
@@ -163,22 +178,26 @@ include("../src/inference.jl")
         Γ = TypeEnv(Dict(:list => ListType(BoolType())))
 
         # match list with | nil => * | cons(h, t) => h
-        e = LFExpr(Match, [
-            :list,
-            LFExpr(Unit, []),         # nil branch
-            (:h, :t),
-            LFExpr(Var, [:h])         # cons branch
-        ])
+        e = LFExpr(
+            Match, [
+                :list,
+                LFExpr(Unit, []),         # nil branch
+                (:h, :t),
+                LFExpr(Var, [:h]),         # cons branch
+            ]
+        )
         # This should fail because nil returns 1 but cons returns B
         @test_throws ErrorException typeinf(e, Γ)
 
         # match list with | nil => true | cons(h, t) => h
-        e = LFExpr(Match, [
-            :list,
-            LFExpr(ConstBool, [true]),  # nil branch
-            (:h, :t),
-            LFExpr(Var, [:h])           # cons branch
-        ])
+        e = LFExpr(
+            Match, [
+                :list,
+                LFExpr(ConstBool, [true]),  # nil branch
+                (:h, :t),
+                LFExpr(Var, [:h]),           # cons branch
+            ]
+        )
         t = typeinf(e, Γ)
         @test t == BoolType()
     end
@@ -189,17 +208,21 @@ include("../src/inference.jl")
         #   | inl(a) => a
         #   | inr(b) => b
         # This should infer that both branches have type B
-        e = LFExpr(Let, [
-            :x,
-            LFExpr(Inl, [:t]),
-            LFExpr(MatchSum, [
+        e = LFExpr(
+            Let, [
                 :x,
-                :a,
-                LFExpr(Var, [:a]),
-                :b,
-                LFExpr(Var, [:b])
-            ])
-        ])
+                LFExpr(Inl, [:t]),
+                LFExpr(
+                    MatchSum, [
+                        :x,
+                        :a,
+                        LFExpr(Var, [:a]),
+                        :b,
+                        LFExpr(Var, [:b]),
+                    ]
+                ),
+            ]
+        )
         Γ = TypeEnv(Dict(:t => BoolType()))
         t = typeinf(e, Γ)
         @test t == BoolType()
@@ -209,11 +232,13 @@ include("../src/inference.jl")
         # Test that type variables are properly unified
         # let x = nil in cons(true, x)
         # Should infer that x : List B
-        e = LFExpr(Let, [
-            :x,
-            LFExpr(Nil, []),
-            LFExpr(Cons, [:t, :x])
-        ])
+        e = LFExpr(
+            Let, [
+                :x,
+                LFExpr(Nil, []),
+                LFExpr(Cons, [:t, :x]),
+            ]
+        )
         Γ = TypeEnv(Dict(:t => BoolType()))
         t = typeinf(e, Γ)
         @test t == ListType(BoolType())

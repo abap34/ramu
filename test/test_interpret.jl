@@ -1,7 +1,3 @@
-using Test
-
-include("../src/interpret.jl")
-
 @testset "Values" begin
     @testset "BoolVal" begin
         v = BoolVal(true)
@@ -49,12 +45,12 @@ end
 
 @testset "Heap allocation" begin
     @testset "alloc_location - empty heap" begin
-        σ = Dict{Int, Val}()
+        σ = Dict{Int, LFVal}()
         @test alloc_location(σ) == 1
     end
 
     @testset "alloc_location - non-empty heap" begin
-        σ = Dict{Int, Val}(1 => NilVal(), 3 => NilVal())
+        σ = Dict{Int, LFVal}(1 => NilVal(), 3 => NilVal())
         @test alloc_location(σ) == 4
     end
 end
@@ -64,7 +60,7 @@ end
 
     @testset "ConstBool" begin
         e = LFExpr(ConstBool, [true])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == BoolVal(true)
         @test new_state.m == 100
@@ -77,7 +73,7 @@ end
 
     @testset "Unit" begin
         e = LFExpr(Unit, [])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == UnitVal()
         @test new_state.m == 100
@@ -85,7 +81,7 @@ end
 
     @testset "Nil" begin
         e = LFExpr(Nil, [])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == NilVal()
         @test new_state.m == 100
@@ -93,16 +89,16 @@ end
 
     @testset "Var" begin
         e = LFExpr(Var, [:x])
-        S = Dict{Symbol, Val}(:x => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == BoolVal(true)
     end
 
     @testset "Pair" begin
-        e = LFExpr(Pair, [:x, :y])
-        S = Dict{Symbol, Val}(:x => BoolVal(true), :y => BoolVal(false))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(LFPair, [LFExpr(Var, [:x]), LFExpr(Var, [:y])])
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true), :y => BoolVal(false))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v isa PairVal
         @test v.fst == BoolVal(true)
@@ -110,18 +106,18 @@ end
     end
 
     @testset "Inl" begin
-        e = LFExpr(Inl, [:x])
-        S = Dict{Symbol, Val}(:x => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(Inl, [LFExpr(Var, [:x])])
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v isa InlVal
         @test v.value == BoolVal(true)
     end
 
     @testset "Inr" begin
-        e = LFExpr(Inr, [:x])
-        S = Dict{Symbol, Val}(:x => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(Inr, [LFExpr(Var, [:x])])
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v isa InrVal
         @test v.value == BoolVal(true)
@@ -132,9 +128,9 @@ end
     prog = Program(Dict{Symbol, FunctionDef}())
 
     @testset "Cons - basic" begin
-        e = LFExpr(Cons, [:h, :t])
-        S = Dict{Symbol, Val}(:h => BoolVal(true), :t => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:t])])
+        S = Dict{Symbol, LFVal}(:h => BoolVal(true), :t => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v isa LocVal
@@ -146,20 +142,20 @@ end
     end
 
     @testset "Cons - insufficient heap" begin
-        e = LFExpr(Cons, [:h, :t])
-        S = Dict{Symbol, Val}(:h => BoolVal(true), :t => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 0)
+        e = LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:t])])
+        S = Dict{Symbol, LFVal}(:h => BoolVal(true), :t => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 0)
         @test_throws ErrorException eval_expr(e, state, prog)
     end
 
     @testset "Cons - multiple allocations" begin
-        e1 = LFExpr(Cons, [:h1, :t1])
-        e2 = LFExpr(Cons, [:h2, :t2])
-        S = Dict{Symbol, Val}(
+        e1 = LFExpr(Cons, [LFExpr(Var, [:h1]), LFExpr(Var, [:t1])])
+        e2 = LFExpr(Cons, [LFExpr(Var, [:h2]), LFExpr(Var, [:t2])])
+        S = Dict{Symbol, LFVal}(
             :h1 => BoolVal(true), :t1 => NilVal(),
             :h2 => BoolVal(false), :t2 => NilVal()
         )
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
         v1, state1 = eval_expr(e1, state, prog)
         state1.S[:h2] = BoolVal(false)
@@ -178,7 +174,7 @@ end
 
     @testset "Let - simple" begin
         e = LFExpr(Let, [:x, LFExpr(ConstBool, [true]), LFExpr(Var, [:x])])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == BoolVal(true)
     end
@@ -186,7 +182,7 @@ end
     @testset "Let - nested" begin
         inner_let = LFExpr(Let, [:y, LFExpr(ConstBool, [false]), LFExpr(Var, [:y])])
         outer_let = LFExpr(Let, [:x, LFExpr(ConstBool, [true]), inner_let])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(outer_let, state, prog)
         @test v == BoolVal(false)
     end
@@ -194,7 +190,7 @@ end
     @testset "Let - shadowing" begin
         inner = LFExpr(Let, [:x, LFExpr(ConstBool, [false]), LFExpr(Var, [:x])])
         outer = LFExpr(Let, [:x, LFExpr(ConstBool, [true]), inner])
-        state = InterpreterState(Dict{Symbol, Val}(), Dict{Int, Val}(), 100)
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(outer, state, prog)
         @test v == BoolVal(false)
     end
@@ -204,25 +200,25 @@ end
     prog = Program(Dict{Symbol, FunctionDef}())
 
     @testset "If - true branch" begin
-        e = LFExpr(If, [:cond, LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
-        S = Dict{Symbol, Val}(:cond => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(If, [LFExpr(Var, [:cond]), LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
+        S = Dict{Symbol, LFVal}(:cond => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == BoolVal(true)
     end
 
     @testset "If - false branch" begin
-        e = LFExpr(If, [:cond, LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
-        S = Dict{Symbol, Val}(:cond => BoolVal(false))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(If, [LFExpr(Var, [:cond]), LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
+        S = Dict{Symbol, LFVal}(:cond => BoolVal(false))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
         @test v == BoolVal(false)
     end
 
     @testset "If - non-boolean condition" begin
-        e = LFExpr(If, [:cond, LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
-        S = Dict{Symbol, Val}(:cond => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(If, [LFExpr(Var, [:cond]), LFExpr(ConstBool, [true]), LFExpr(ConstBool, [false])])
+        S = Dict{Symbol, LFVal}(:cond => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         @test_throws ErrorException eval_expr(e, state, prog)
     end
 end
@@ -231,11 +227,11 @@ end
     prog = Program(Dict{Symbol, FunctionDef}())
 
     @testset "MatchPair - basic" begin
-        body = LFExpr(Pair, [:a, :b])
-        e = LFExpr(MatchPair, [:p, :a, :b, body])
+        body = LFExpr(LFPair, [LFExpr(Var, [:a]), LFExpr(Var, [:b])])
+        e = LFExpr(MatchPair, [LFExpr(Var, [:p]), :a, :b, body])
         pair = PairVal(BoolVal(true), BoolVal(false))
-        S = Dict{Symbol, Val}(:p => pair)
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:p => pair)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v isa PairVal
@@ -245,9 +241,9 @@ end
 
     @testset "MatchPair - invalid value" begin
         body = LFExpr(Var, [:a])
-        e = LFExpr(MatchPair, [:p, :a, :b, body])
-        S = Dict{Symbol, Val}(:p => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(MatchPair, [LFExpr(Var, [:p]), :a, :b, body])
+        S = Dict{Symbol, LFVal}(:p => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         @test_throws ErrorException eval_expr(e, state, prog)
     end
 end
@@ -258,9 +254,9 @@ end
     @testset "MatchSum - Inl branch" begin
         e_inl = LFExpr(Var, [:y])
         e_inr = LFExpr(ConstBool, [false])
-        e = LFExpr(MatchSum, [:x, :y, e_inl, :z, e_inr])
-        S = Dict{Symbol, Val}(:x => InlVal(BoolVal(true)))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(MatchSum, [LFExpr(Var, [:x]), :y, e_inl, :z, e_inr])
+        S = Dict{Symbol, LFVal}(:x => InlVal(BoolVal(true)))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(true)
@@ -269,9 +265,9 @@ end
     @testset "MatchSum - Inr branch" begin
         e_inl = LFExpr(ConstBool, [true])
         e_inr = LFExpr(Var, [:z])
-        e = LFExpr(MatchSum, [:x, :y, e_inl, :z, e_inr])
-        S = Dict{Symbol, Val}(:x => InrVal(BoolVal(false)))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(MatchSum, [LFExpr(Var, [:x]), :y, e_inl, :z, e_inr])
+        S = Dict{Symbol, LFVal}(:x => InrVal(BoolVal(false)))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(false)
@@ -280,9 +276,9 @@ end
     @testset "MatchSum - invalid value" begin
         e_inl = LFExpr(Var, [:y])
         e_inr = LFExpr(Var, [:z])
-        e = LFExpr(MatchSum, [:x, :y, e_inl, :z, e_inr])
-        S = Dict{Symbol, Val}(:x => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(MatchSum, [LFExpr(Var, [:x]), :y, e_inl, :z, e_inr])
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         @test_throws ErrorException eval_expr(e, state, prog)
     end
 end
@@ -293,9 +289,9 @@ end
     @testset "Match - nil case" begin
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(Var, [:h])
-        e = LFExpr(Match, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(Match, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(false)
@@ -303,11 +299,11 @@ end
     end
 
     @testset "Match - cons case" begin
-        σ = Dict{Int, Val}(1 => PairVal(BoolVal(true), NilVal()))
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(Var, [:h])
-        e = LFExpr(Match, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        e = LFExpr(Match, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         state = InterpreterState(S, σ, 100)
         v, new_state = eval_expr(e, state, prog)
 
@@ -317,11 +313,11 @@ end
     end
 
     @testset "Match - heap freed" begin
-        σ = Dict{Int, Val}(1 => PairVal(BoolVal(true), NilVal()))
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(ConstBool, [true])
-        e = LFExpr(Match, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        e = LFExpr(Match, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         initial_m = 50
         state = InterpreterState(S, σ, initial_m)
         v, new_state = eval_expr(e, state, prog)
@@ -337,9 +333,9 @@ end
     @testset "MatchPrime - nil case" begin
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(Var, [:h])
-        e = LFExpr(MatchPrime, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        e = LFExpr(MatchPrime, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(false)
@@ -347,11 +343,11 @@ end
     end
 
     @testset "MatchPrime - cons case" begin
-        σ = Dict{Int, Val}(1 => PairVal(BoolVal(true), NilVal()))
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(Var, [:h])
-        e = LFExpr(MatchPrime, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        e = LFExpr(MatchPrime, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         state = InterpreterState(S, σ, 100)
         v, new_state = eval_expr(e, state, prog)
 
@@ -361,11 +357,11 @@ end
     end
 
     @testset "MatchPrime - heap preserved" begin
-        σ = Dict{Int, Val}(1 => PairVal(BoolVal(true), NilVal()))
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
         e_nil = LFExpr(ConstBool, [false])
         e_cons = LFExpr(ConstBool, [true])
-        e = LFExpr(MatchPrime, [:l, e_nil, (:h, :t), e_cons])
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        e = LFExpr(MatchPrime, [LFExpr(Var, [:l]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         initial_m = 50
         state = InterpreterState(S, σ, initial_m)
         v, new_state = eval_expr(e, state, prog)
@@ -383,8 +379,8 @@ end
         prog = Program(Dict(:id => id_func))
 
         e = LFExpr(FunApply, [:id, :arg])
-        S = Dict{Symbol, Val}(:arg => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:arg => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(true)
@@ -396,8 +392,8 @@ end
         prog = Program(Dict(:const => const_func))
 
         e = LFExpr(FunApply, [:const, :arg])
-        S = Dict{Symbol, Val}(:arg => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:arg => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(false)
@@ -409,8 +405,8 @@ end
         prog = Program(Dict(:fst => fst_func))
 
         e = LFExpr(FunApply, [:fst, :a, :b])
-        S = Dict{Symbol, Val}(:a => BoolVal(true), :b => BoolVal(false))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:a => BoolVal(true), :b => BoolVal(false))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(true)
@@ -419,8 +415,8 @@ end
     @testset "FunApply - undefined function" begin
         prog = Program(Dict{Symbol, FunctionDef}())
         e = LFExpr(FunApply, [:foo, :x])
-        S = Dict{Symbol, Val}(:x => BoolVal(true))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:x => BoolVal(true))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
         @test_throws ErrorException eval_expr(e, state, prog)
     end
@@ -431,8 +427,8 @@ end
         prog = Program(Dict(:id => id_func))
 
         e = LFExpr(FunApply, [:id, :a, :b])
-        S = Dict{Symbol, Val}(:a => BoolVal(true), :b => BoolVal(false))
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:a => BoolVal(true), :b => BoolVal(false))
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
         @test_throws ErrorException eval_expr(e, state, prog)
     end
@@ -443,8 +439,8 @@ end
         prog = Program(Dict(:id => id_func))
 
         e = LFExpr(FunApply, [:id, :undefined_var])
-        S = Dict{Symbol, Val}()
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}()
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
         @test_throws ErrorException eval_expr(e, state, prog)
     end
@@ -453,23 +449,23 @@ end
 @testset "Complex programs" begin
     @testset "Length function (using MatchPrime)" begin
         length_body = LFExpr(MatchPrime, [
-            :l,
+            LFExpr(Var, [:l]),
             LFExpr(ConstBool, [false]),
             (:h, :t),
             LFExpr(Let, [
                 :rest_len,
-                LFExpr(FunApply, [:length, :t]),
+                LFExpr(FunApply, [:length, LFExpr(Var, [:t])]),
                 LFExpr(ConstBool, [true])
             ])
         ])
         length_func = FunctionDef([:l], length_body)
         prog = Program(Dict(:length => length_func))
 
-        σ = Dict{Int, Val}(
+        σ = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), NilVal())
         )
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         state = InterpreterState(S, σ, 100)
         v, new_state = eval_expr(length_body, state, prog)
 
@@ -481,7 +477,7 @@ end
 
     @testset "Sum of pair" begin
         sum_pair_body = LFExpr(MatchPair, [
-            :p,
+            LFExpr(Var, [:p]),
             :a,
             :b,
             LFExpr(Var, [:a])
@@ -490,10 +486,10 @@ end
         prog = Program(Dict(:sum_pair => sum_pair_func))
 
         pair = PairVal(BoolVal(true), BoolVal(false))
-        S = Dict{Symbol, Val}(:p => pair)
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:p => pair)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
-        e = LFExpr(FunApply, [:sum_pair, :p])
+        e = LFExpr(FunApply, [:sum_pair, LFExpr(Var, [:p])])
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(true)
@@ -501,7 +497,7 @@ end
 
     @testset "Either unwrap (left)" begin
         unwrap_body = LFExpr(MatchSum, [
-            :either,
+            LFExpr(Var, [:either]),
             :left_val,
             LFExpr(Var, [:left_val]),
             :right_val,
@@ -511,10 +507,10 @@ end
         prog = Program(Dict(:unwrap => unwrap_func))
 
         either = InlVal(BoolVal(true))
-        S = Dict{Symbol, Val}(:either => either)
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:either => either)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
-        e = LFExpr(FunApply, [:unwrap, :either])
+        e = LFExpr(FunApply, [:unwrap, LFExpr(Var, [:either])])
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(true)
@@ -522,7 +518,7 @@ end
 
     @testset "Either unwrap (right)" begin
         unwrap_body = LFExpr(MatchSum, [
-            :either,
+            LFExpr(Var, [:either]),
             :left_val,
             LFExpr(Var, [:left_val]),
             :right_val,
@@ -532,10 +528,10 @@ end
         prog = Program(Dict(:unwrap => unwrap_func))
 
         either = InrVal(BoolVal(false))
-        S = Dict{Symbol, Val}(:either => either)
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:either => either)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
-        e = LFExpr(FunApply, [:unwrap, :either])
+        e = LFExpr(FunApply, [:unwrap, LFExpr(Var, [:either])])
         v, new_state = eval_expr(e, state, prog)
 
         @test v == BoolVal(false)
@@ -546,10 +542,10 @@ end
     @testset "Heap allocation tracking" begin
         prog = Program(Dict{Symbol, FunctionDef}())
 
-        S = Dict{Symbol, Val}(:h => BoolVal(true), :t => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 10)
+        S = Dict{Symbol, LFVal}(:h => BoolVal(true), :t => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 10)
 
-        e = LFExpr(Cons, [:h, :t])
+        e = LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:t])])
         initial_m = state.m
         v, new_state = eval_expr(e, state, prog)
 
@@ -561,11 +557,11 @@ end
         prog = Program(Dict{Symbol, FunctionDef}())
 
         pair_val = PairVal(BoolVal(true), NilVal())
-        σ = Dict{Int, Val}(1 => pair_val)
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        σ = Dict{Int, LFVal}(1 => pair_val)
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         state = InterpreterState(S, σ, 50)
 
-        e = LFExpr(Match, [:l, LFExpr(ConstBool, [false]), (:h, :t), LFExpr(ConstBool, [true])])
+        e = LFExpr(Match, [LFExpr(Var, [:l]), LFExpr(ConstBool, [false]), (:h, :t), LFExpr(ConstBool, [true])])
         initial_m = state.m
         v, new_state = eval_expr(e, state, prog)
 
@@ -577,11 +573,11 @@ end
         prog = Program(Dict{Symbol, FunctionDef}())
 
         pair_val = PairVal(BoolVal(true), NilVal())
-        σ = Dict{Int, Val}(1 => pair_val)
-        S = Dict{Symbol, Val}(:l => LocVal(1))
+        σ = Dict{Int, LFVal}(1 => pair_val)
+        S = Dict{Symbol, LFVal}(:l => LocVal(1))
         state = InterpreterState(S, σ, 50)
 
-        e = LFExpr(MatchPrime, [:l, LFExpr(ConstBool, [false]), (:h, :t), LFExpr(ConstBool, [true])])
+        e = LFExpr(MatchPrime, [LFExpr(Var, [:l]), LFExpr(ConstBool, [false]), (:h, :t), LFExpr(ConstBool, [true])])
         initial_m = state.m
         v, new_state = eval_expr(e, state, prog)
 
@@ -592,13 +588,13 @@ end
 
 @testset "Reverse function from paper (Example 1)" begin
     rev_aux_body = LFExpr(Match, [
-        :l,
+        LFExpr(Var, [:l]),
         LFExpr(Var, [:acc]),
         (:h, :t),
         LFExpr(Let, [
             :new_acc,
-            LFExpr(Cons, [:h, :acc]),
-            LFExpr(FunApply, [:rev_aux, :t, :new_acc])
+            LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:acc])]),
+            LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:t]), LFExpr(Var, [:new_acc])])
         ])
     ])
 
@@ -607,7 +603,7 @@ end
     reverse_body = LFExpr(Let, [
         :nil_val,
         LFExpr(Nil, []),
-        LFExpr(FunApply, [:rev_aux, :input, :nil_val])
+        LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:input]), LFExpr(Var, [:nil_val])])
     ])
 
     reverse_func = FunctionDef([:input], reverse_body)
@@ -618,8 +614,8 @@ end
     ))
 
     @testset "Reverse empty list" begin
-        S = Dict{Symbol, Val}(:input => NilVal())
-        state = InterpreterState(S, Dict{Int, Val}(), 100)
+        S = Dict{Symbol, LFVal}(:input => NilVal())
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
         v, new_state = eval_expr(reverse_body, state, prog)
 
@@ -628,10 +624,10 @@ end
     end
 
     @testset "Reverse single element list" begin
-        σ = Dict{Int, Val}(
+        σ = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), NilVal())
         )
-        S = Dict{Symbol, Val}(:input => LocVal(1))
+        S = Dict{Symbol, LFVal}(:input => LocVal(1))
         initial_m = 100
         state = InterpreterState(S, σ, initial_m)
 
@@ -644,11 +640,11 @@ end
     end
 
     @testset "Reverse two element list [true, false]" begin
-        σ = Dict{Int, Val}(
+        σ = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), NilVal())
         )
-        S = Dict{Symbol, Val}(:input => LocVal(1))
+        S = Dict{Symbol, LFVal}(:input => LocVal(1))
         initial_m = 100
         state = InterpreterState(S, σ, initial_m)
 
@@ -665,12 +661,12 @@ end
     end
 
     @testset "Reverse three element list [true, false, true]" begin
-        σ = Dict{Int, Val}(
+        σ = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), LocVal(3)),
             3 => PairVal(BoolVal(true), NilVal())
         )
-        S = Dict{Symbol, Val}(:input => LocVal(1))
+        S = Dict{Symbol, LFVal}(:input => LocVal(1))
         initial_m = 100
         state = InterpreterState(S, σ, initial_m)
 
@@ -692,12 +688,12 @@ end
     end
 
     @testset "Memory management - destructive reverse" begin
-        σ = Dict{Int, Val}(
+        σ = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), LocVal(3)),
             3 => PairVal(BoolVal(true), NilVal())
         )
-        S = Dict{Symbol, Val}(:input => LocVal(1))
+        S = Dict{Symbol, LFVal}(:input => LocVal(1))
         initial_m = 10
         state = InterpreterState(S, σ, initial_m)
 
@@ -711,7 +707,7 @@ end
     end
 end
 
-function make_list_from_array(arr::Vector, σ::Dict{Int, Val})::Tuple{Val, Dict{Int, Val}}
+function make_list_from_array(arr::Vector, σ::Dict{Int, LFVal})::Tuple{LFVal, Dict{Int, LFVal}}
     if isempty(arr)
         return (NilVal(), σ)
     end
@@ -720,15 +716,15 @@ function make_list_from_array(arr::Vector, σ::Dict{Int, Val})::Tuple{Val, Dict{
     tail_val, new_σ = make_list_from_array(arr[2:end], new_σ)
 
     ℓ = alloc_location(new_σ)
-    head_val = arr[1] isa Val ? arr[1] : BoolVal(arr[1])
+    head_val = arr[1] isa LFVal ? arr[1] : BoolVal(arr[1])
     new_σ[ℓ] = PairVal(head_val, tail_val)
 
     return (LocVal(ℓ), new_σ)
 end
 
-function list_to_array(v::Val, σ::Dict{Int, Val})::Vector{Val}
+function list_to_array(v::LFVal, σ::Dict{Int, LFVal})::Vector{LFVal}
     if v isa NilVal
-        return Val[]
+        return LFVal[]
     elseif v isa LocVal
         pair = σ[v.loc]
         if !(pair isa PairVal)
@@ -746,7 +742,7 @@ end
         main_func = FunctionDef([:x], main_body)
         prog = Program(Dict(:main => main_func))
 
-        args = Dict{Symbol, Val}(:x => BoolVal(true))
+        args = Dict{Symbol, LFVal}(:x => BoolVal(true))
         v, final_state = run_program(prog; initial_stack=args)
 
         @test v == BoolVal(true)
@@ -762,7 +758,7 @@ end
                 LFExpr(Var, [:a])
             ])
         ])
-        main_func = FunctionDef([], main_body)
+        main_func = FunctionDef(Symbol[], main_body)
         prog = Program(Dict(:main => main_func))
 
         v, final_state = run_program(prog)
@@ -772,13 +768,13 @@ end
 
     @testset "Reverse function end-to-end" begin
         rev_aux_body = LFExpr(Match, [
-            :l,
+            LFExpr(Var, [:l]),
             LFExpr(Var, [:acc]),
             (:h, :t),
             LFExpr(Let, [
                 :new_acc,
-                LFExpr(Cons, [:h, :acc]),
-                LFExpr(FunApply, [:rev_aux, :t, :new_acc])
+                LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:acc])]),
+                LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:t]), LFExpr(Var, [:new_acc])])
             ])
         ])
         rev_aux_func = FunctionDef([:l, :acc], rev_aux_body)
@@ -786,7 +782,7 @@ end
         main_body = LFExpr(Let, [
             :nil_val,
             LFExpr(Nil, []),
-            LFExpr(FunApply, [:rev_aux, :input, :nil_val])
+            LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:input]), LFExpr(Var, [:nil_val])])
         ])
         main_func = FunctionDef([:input], main_body)
 
@@ -795,12 +791,12 @@ end
             :main => main_func
         ))
 
-        initial_heap = Dict{Int, Val}(
+        initial_heap = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), LocVal(3)),
             3 => PairVal(BoolVal(true), NilVal())
         )
-        args = Dict{Symbol, Val}(:input => LocVal(1))
+        args = Dict{Symbol, LFVal}(:input => LocVal(1))
 
         v, final_state = run_program(
             prog;
@@ -819,18 +815,18 @@ end
 
     @testset "List length function with MatchPrime" begin
         length_body = LFExpr(MatchPrime, [
-            :l,
+            LFExpr(Var, [:l]),
             LFExpr(ConstBool, [false]),
             (:h, :t),
             LFExpr(Let, [
                 :rest_len,
-                LFExpr(FunApply, [:length, :t]),
+                LFExpr(FunApply, [:length, LFExpr(Var, [:t])]),
                 LFExpr(ConstBool, [true])
             ])
         ])
         length_func = FunctionDef([:l], length_body)
 
-        main_body = LFExpr(FunApply, [:length, :input])
+        main_body = LFExpr(FunApply, [:length, LFExpr(Var, [:input])])
         main_func = FunctionDef([:input], main_body)
 
         prog = Program(Dict(
@@ -838,12 +834,12 @@ end
             :main => main_func
         ))
 
-        initial_heap = Dict{Int, Val}(
+        initial_heap = Dict{Int, LFVal}(
             1 => PairVal(BoolVal(true), LocVal(2)),
             2 => PairVal(BoolVal(false), LocVal(3)),
             3 => PairVal(BoolVal(true), NilVal())
         )
-        args = Dict{Symbol, Val}(:input => LocVal(1))
+        args = Dict{Symbol, LFVal}(:input => LocVal(1))
 
         v, final_state = run_program(
             prog;
@@ -860,7 +856,7 @@ end
 
     @testset "Sum type processing" begin
         process_body = LFExpr(MatchSum, [
-            :value,
+            LFExpr(Var, [:value]),
             :left,
             LFExpr(Var, [:left]),
             :right,
@@ -868,7 +864,7 @@ end
         ])
         process_func = FunctionDef([:value], process_body)
 
-        main_body = LFExpr(FunApply, [:process, :input])
+        main_body = LFExpr(FunApply, [:process, LFExpr(Var, [:input])])
         main_func = FunctionDef([:input], main_body)
 
         prog = Program(Dict(
@@ -876,18 +872,18 @@ end
             :main => main_func
         ))
 
-        args_left = Dict{Symbol, Val}(:input => InlVal(BoolVal(true)))
+        args_left = Dict{Symbol, LFVal}(:input => InlVal(BoolVal(true)))
         v1, _ = run_program(prog; initial_stack=args_left)
         @test v1 == BoolVal(true)
 
-        args_right = Dict{Symbol, Val}(:input => InrVal(BoolVal(false)))
+        args_right = Dict{Symbol, LFVal}(:input => InrVal(BoolVal(false)))
         v2, _ = run_program(prog; initial_stack=args_right)
         @test v2 == BoolVal(false)
     end
 
     @testset "Custom function name (not main)" begin
         compute_body = LFExpr(ConstBool, [false])
-        compute_func = FunctionDef([], compute_body)
+        compute_func = FunctionDef(Symbol[], compute_body)
         prog = Program(Dict(:compute => compute_func))
 
         v, _ = run_program(prog; entrypoint=:compute)
@@ -897,17 +893,17 @@ end
     @testset "Memory management in run_program" begin
         cons_twice_body = LFExpr(Let, [
             :first,
-            LFExpr(Cons, [:x, :y]),
+            LFExpr(Cons, [LFExpr(Var, [:x]), LFExpr(Var, [:y])]),
             LFExpr(Let, [
                 :second,
-                LFExpr(Cons, [:x, :y]),
+                LFExpr(Cons, [LFExpr(Var, [:x]), LFExpr(Var, [:y])]),
                 LFExpr(Var, [:second])
             ])
         ])
         main_func = FunctionDef([:x, :y], cons_twice_body)
         prog = Program(Dict(:main => main_func))
 
-        args = Dict{Symbol, Val}(:x => BoolVal(true), :y => NilVal())
+        args = Dict{Symbol, LFVal}(:x => BoolVal(true), :y => NilVal())
         v, final_state = run_program(prog; initial_stack=args, heap_size=10)
 
         @test v isa LocVal
@@ -917,13 +913,13 @@ end
 
     @testset "Empty list reverse" begin
         rev_aux_body = LFExpr(Match, [
-            :l,
+            LFExpr(Var, [:l]),
             LFExpr(Var, [:acc]),
             (:h, :t),
             LFExpr(Let, [
                 :new_acc,
-                LFExpr(Cons, [:h, :acc]),
-                LFExpr(FunApply, [:rev_aux, :t, :new_acc])
+                LFExpr(Cons, [LFExpr(Var, [:h]), LFExpr(Var, [:acc])]),
+                LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:t]), LFExpr(Var, [:new_acc])])
             ])
         ])
         rev_aux_func = FunctionDef([:l, :acc], rev_aux_body)
@@ -931,7 +927,7 @@ end
         main_body = LFExpr(Let, [
             :nil_val,
             LFExpr(Nil, []),
-            LFExpr(FunApply, [:rev_aux, :input, :nil_val])
+            LFExpr(FunApply, [:rev_aux, LFExpr(Var, [:input]), LFExpr(Var, [:nil_val])])
         ])
         main_func = FunctionDef([:input], main_body)
 
@@ -940,7 +936,7 @@ end
             :main => main_func
         ))
 
-        args = Dict{Symbol, Val}(:input => NilVal())
+        args = Dict{Symbol, LFVal}(:input => NilVal())
         v, final_state = run_program(prog; initial_stack=args, heap_size=10)
 
         @test v == NilVal()
