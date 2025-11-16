@@ -1,0 +1,18 @@
+-- 2. Practical example: List reversal using accumulator
+-- This is a classic functional programming pattern
+-- Demonstrates tail recursion with destructive list consumption
+
+rev_aux : (list B ⊗ list B) -> list B
+rev_aux(p) =
+  match p with (xs, acc) =>
+    match xs with
+    | nil => acc
+    | cons(h, t) => rev_aux((t, cons(h, acc)))
+
+reverse : list B -> list B
+reverse(xs) = rev_aux((xs, nil))
+
+main : () -> list B
+main() =
+  let lst = cons(true, cons(false, cons(true, nil))) in
+  reverse(lst)

@@ -1,0 +1,8 @@
+-- 1. Very simple example: Pair operations
+-- Create a pair and extract the first element
+
+fst : (B ⊗ B) -> B
+fst(p) = match p with (x, y) => x
+
+main : () -> B
+main() = fst((true, false))

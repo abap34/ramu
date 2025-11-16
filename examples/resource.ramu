@@ -1,0 +1,27 @@
+-- 3. Resource upper bound example: Replicate (2x + c pattern)
+-- Each element in the input list is duplicated
+-- For input list of length n, creates 2n cons cells plus overhead
+-- Resource bound: 2n + c where n is input length
+
+duplicate : B -> list B
+duplicate(x) = cons(x, cons(x, nil))
+
+appendLists : (list B ⊗ list B) -> list B
+appendLists(p) =
+  match p with (xs, ys) =>
+    match xs with
+    | nil => ys
+    | cons(h, t) => cons(h, appendLists((t, ys)))
+
+replicate : list B -> list B
+replicate(xs) =
+  match xs with
+  | nil => nil
+  | cons(h, t) =>
+      let dup = duplicate(h) in
+      appendLists((dup, replicate(t)))
+
+main : () -> list B
+main() =
+  let lst = cons(true, cons(false, nil)) in
+  replicate(lst)
