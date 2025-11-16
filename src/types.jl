@@ -20,17 +20,20 @@ const subscripts = Dict(
     9 => "₉"
 )
 
-fresh_typevar = let
-    counter = 0
-    () -> begin
-        name = Symbol(
-            typevarnames[mod1(counter + 1, length(typevarnames))] *
-                join(subscripts[d] for d in digits(div(counter, length(typevarnames))))
-        )
-        counter += 1
-        return LFTypeVar(name)
+function make_fresh_symbol_generator(names::Vector{String}, transform=identity)
+    let counter = 0
+        () -> begin
+            name = Symbol(
+                names[mod1(counter + 1, length(names))] *
+                    join(subscripts[d] for d in digits(div(counter, length(names))))
+            )
+            counter += 1
+            return transform(name)
+        end
     end
 end
+
+fresh_typevar = make_fresh_symbol_generator(typevarnames, LFTypeVar)
 
 const TypeLike = Union{LFType, LFTypeVar}
 
