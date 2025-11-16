@@ -378,7 +378,7 @@ end
         id_func = FunctionDef([:x], id_body)
         prog = Program(Dict(:id => id_func))
 
-        e = LFExpr(FunApply, [:id, :arg])
+        e = LFExpr(FunApply, [:id, LFExpr(Var, [:arg])])
         S = Dict{Symbol, LFVal}(:arg => BoolVal(true))
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
@@ -391,7 +391,7 @@ end
         const_func = FunctionDef([:x], const_body)
         prog = Program(Dict(:const => const_func))
 
-        e = LFExpr(FunApply, [:const, :arg])
+        e = LFExpr(FunApply, [:const, LFExpr(Var, [:arg])])
         S = Dict{Symbol, LFVal}(:arg => BoolVal(true))
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
@@ -404,7 +404,7 @@ end
         fst_func = FunctionDef([:x, :y], fst_body)
         prog = Program(Dict(:fst => fst_func))
 
-        e = LFExpr(FunApply, [:fst, :a, :b])
+        e = LFExpr(FunApply, [:fst, LFExpr(Var, [:a]), LFExpr(Var, [:b])])
         S = Dict{Symbol, LFVal}(:a => BoolVal(true), :b => BoolVal(false))
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
         v, new_state = eval_expr(e, state, prog)
@@ -414,7 +414,7 @@ end
 
     @testset "FunApply - undefined function" begin
         prog = Program(Dict{Symbol, FunctionDef}())
-        e = LFExpr(FunApply, [:foo, :x])
+        e = LFExpr(FunApply, [:foo, LFExpr(Var, [:x])])
         S = Dict{Symbol, LFVal}(:x => BoolVal(true))
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
@@ -426,7 +426,7 @@ end
         id_func = FunctionDef([:x], id_body)
         prog = Program(Dict(:id => id_func))
 
-        e = LFExpr(FunApply, [:id, :a, :b])
+        e = LFExpr(FunApply, [:id, LFExpr(Var, [:a]), LFExpr(Var, [:b])])
         S = Dict{Symbol, LFVal}(:a => BoolVal(true), :b => BoolVal(false))
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
@@ -438,7 +438,7 @@ end
         id_func = FunctionDef([:x], id_body)
         prog = Program(Dict(:id => id_func))
 
-        e = LFExpr(FunApply, [:id, :undefined_var])
+        e = LFExpr(FunApply, [:id, LFExpr(Var, [:undefined_var])])
         S = Dict{Symbol, LFVal}()
         state = InterpreterState(S, Dict{Int, LFVal}(), 100)
 
@@ -941,5 +941,216 @@ end
 
         @test v == NilVal()
         @test isempty(final_state.σ)
+    end
+end
+
+@testset "Complex scoping and nested structures" begin
+    prog = Program(Dict{Symbol, FunctionDef}())
+
+    @testset "Let inside Match cons branch" begin
+        # match xs with | nil => false | cons(h, t) => let dup = h in dup
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
+        e_nil = LFExpr(ConstBool, [false])
+        e_cons = LFExpr(Let, [
+            :dup,
+            LFExpr(Var, [:h]),
+            LFExpr(Var, [:dup])
+        ])
+        e = LFExpr(Match, [LFExpr(Var, [:xs]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:xs => LocVal(1))
+        state = InterpreterState(S, σ, 100)
+        v, new_state = eval_expr(e, state, prog)
+
+        @test v == BoolVal(true)
+        @test !haskey(new_state.σ, 1)  # Destructive match freed the location
+    end
+
+    @testset "FunApply with variable from Match - the replicate pattern" begin
+        # Simulates: match xs with | nil => nil | cons(h, t) => let dup = duplicate(h) in append(dup, process(t))
+        duplicate_body = LFExpr(Cons, [LFExpr(Var, [:x]), LFExpr(Cons, [LFExpr(Var, [:x]), LFExpr(Nil, [])])])
+        duplicate_func = FunctionDef([:x], duplicate_body)
+
+        process_body = LFExpr(Match, [
+            LFExpr(Var, [:xs]),
+            LFExpr(Nil, []),
+            (:h, :t),
+            LFExpr(Let, [
+                :dup,
+                LFExpr(FunApply, [:duplicate, LFExpr(Var, [:h])]),
+                LFExpr(Var, [:dup])  # Simplified: just return dup instead of appending
+            ])
+        ])
+        process_func = FunctionDef([:xs], process_body)
+
+        prog_with_funcs = Program(Dict(:duplicate => duplicate_func, :process => process_func))
+
+        # Test with list [true]
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
+        S = Dict{Symbol, LFVal}(:xs => LocVal(1))
+        state = InterpreterState(S, σ, 100)
+
+        e = LFExpr(FunApply, [:process, LFExpr(Var, [:xs])])
+        v, new_state = eval_expr(e, state, prog_with_funcs)
+
+        @test v isa LocVal  # Should return a list [true, true]
+        result = list_to_array(v, new_state.σ)
+        @test length(result) == 2
+        @test result[1] == BoolVal(true)
+        @test result[2] == BoolVal(true)
+    end
+
+    @testset "Nested Match with variable access" begin
+        # match outer with | nil => false | cons(h1, t1) =>
+        #   match inner with | nil => h1 | cons(h2, t2) => h2
+        σ_outer = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
+        σ_inner = Dict{Int, LFVal}(2 => PairVal(BoolVal(false), NilVal()))
+
+        e_inner = LFExpr(MatchPrime, [
+            LFExpr(Var, [:inner]),
+            LFExpr(Var, [:h1]),  # nil case: return h1 from outer match
+            (:h2, :t2),
+            LFExpr(Var, [:h2])   # cons case: return h2
+        ])
+
+        e_outer = LFExpr(MatchPrime, [
+            LFExpr(Var, [:outer]),
+            LFExpr(ConstBool, [false]),
+            (:h1, :t1),
+            e_inner
+        ])
+
+        S = Dict{Symbol, LFVal}(:outer => LocVal(1), :inner => LocVal(2))
+        state = InterpreterState(S, merge(σ_outer, σ_inner), 100)
+        v, new_state = eval_expr(e_outer, state, prog)
+
+        @test v == BoolVal(false)  # Should return h2 from inner match
+    end
+
+    @testset "Multiple function calls with shared variables" begin
+        # Simulates: let x = true in let y = id(x) in id(y)
+        id_body = LFExpr(Var, [:param])
+        id_func = FunctionDef([:param], id_body)
+        prog_id = Program(Dict(:id => id_func))
+
+        e = LFExpr(Let, [
+            :x,
+            LFExpr(ConstBool, [true]),
+            LFExpr(Let, [
+                :y,
+                LFExpr(FunApply, [:id, LFExpr(Var, [:x])]),
+                LFExpr(FunApply, [:id, LFExpr(Var, [:y])])
+            ])
+        ])
+
+        state = InterpreterState(Dict{Symbol, LFVal}(), Dict{Int, LFVal}(), 100)
+        v, new_state = eval_expr(e, state, prog_id)
+
+        @test v == BoolVal(true)
+    end
+
+    @testset "MatchPair with nested Let" begin
+        # match p with (a, b) => let c = a in c
+        pair = PairVal(BoolVal(true), BoolVal(false))
+        body = LFExpr(Let, [
+            :c,
+            LFExpr(Var, [:a]),
+            LFExpr(Var, [:c])
+        ])
+        e = LFExpr(MatchPair, [LFExpr(Var, [:p]), :a, :b, body])
+        S = Dict{Symbol, LFVal}(:p => pair)
+        state = InterpreterState(S, Dict{Int, LFVal}(), 100)
+        v, new_state = eval_expr(e, state, prog)
+
+        @test v == BoolVal(true)
+    end
+
+    @testset "Complex: Match in Match in Let" begin
+        # let outer_list = [true] in
+        #   match outer_list with
+        #     | nil => false
+        #     | cons(h_outer, t_outer) =>
+        #         match inner_list with
+        #           | nil => h_outer
+        #           | cons(h_inner, t_inner) => h_inner
+        σ = Dict{Int, LFVal}(
+            1 => PairVal(BoolVal(true), NilVal()),
+            2 => PairVal(BoolVal(false), NilVal())
+        )
+
+        e_inner_match = LFExpr(MatchPrime, [
+            LFExpr(Var, [:inner_list]),
+            LFExpr(Var, [:h_outer]),
+            (:h_inner, :t_inner),
+            LFExpr(Var, [:h_inner])
+        ])
+
+        e_outer_match = LFExpr(MatchPrime, [
+            LFExpr(Var, [:outer_list]),
+            LFExpr(ConstBool, [false]),
+            (:h_outer, :t_outer),
+            e_inner_match
+        ])
+
+        e = LFExpr(Let, [
+            :outer_list,
+            LFExpr(Var, [:list1]),
+            e_outer_match
+        ])
+
+        S = Dict{Symbol, LFVal}(:list1 => LocVal(1), :inner_list => LocVal(2))
+        state = InterpreterState(S, σ, 100)
+        v, new_state = eval_expr(e, state, prog)
+
+        @test v == BoolVal(false)
+    end
+
+    @testset "Function call with expression argument from Match" begin
+        # match xs with | nil => false | cons(h, t) => id(h)
+        id_body = LFExpr(Var, [:x])
+        id_func = FunctionDef([:x], id_body)
+        prog_id = Program(Dict(:id => id_func))
+
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(true), NilVal()))
+        e_nil = LFExpr(ConstBool, [false])
+        e_cons = LFExpr(FunApply, [:id, LFExpr(Var, [:h])])
+        e = LFExpr(MatchPrime, [LFExpr(Var, [:xs]), e_nil, (:h, :t), e_cons])
+        S = Dict{Symbol, LFVal}(:xs => LocVal(1))
+        state = InterpreterState(S, σ, 100)
+        v, new_state = eval_expr(e, state, prog_id)
+
+        @test v == BoolVal(true)
+    end
+
+    @testset "Two nested Lets with Match in between" begin
+        # let a = true in
+        #   match xs with
+        #     | nil => a
+        #     | cons(h, t) => let b = h in b
+        σ = Dict{Int, LFVal}(1 => PairVal(BoolVal(false), NilVal()))
+
+        e_cons_body = LFExpr(Let, [
+            :b,
+            LFExpr(Var, [:h]),
+            LFExpr(Var, [:b])
+        ])
+
+        e_match = LFExpr(MatchPrime, [
+            LFExpr(Var, [:xs]),
+            LFExpr(Var, [:a]),
+            (:h, :t),
+            e_cons_body
+        ])
+
+        e = LFExpr(Let, [
+            :a,
+            LFExpr(ConstBool, [true]),
+            e_match
+        ])
+
+        S = Dict{Symbol, LFVal}(:xs => LocVal(1))
+        state = InterpreterState(S, σ, 100)
+        v, new_state = eval_expr(e, state, prog)
+
+        @test v == BoolVal(false)  # Should get h from cons branch
     end
 end

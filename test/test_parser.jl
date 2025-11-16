@@ -270,6 +270,18 @@
             @test e.args[4].head == Var
         end
 
+        @testset "Match Prime (Non-destructive List Match)" begin
+            tokens = tokenize("match' xs with | nil => * | cons(h, t) => h")
+            p = Parser(tokens)
+            e = parse_expr(p)
+            @test e.head == MatchPrime
+            @test e.args[1].head == Var
+            @test e.args[1].args[1] == :xs
+            @test e.args[2].head == Unit
+            @test e.args[3] == (:h, :t)
+            @test e.args[4].head == Var
+        end
+
         @testset "Function Calls" begin
             tokens = tokenize("f(x)")
             p = Parser(tokens)
