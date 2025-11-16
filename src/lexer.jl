@@ -6,6 +6,7 @@
     TK_THEN
     TK_ELSE
     TK_MATCH
+    TK_MATCH_PRIME
     TK_WITH
     TK_NIL
     TK_CONS
@@ -218,6 +219,8 @@ function next_token!(lex::Lexer)::Token
             return Token(TK_ELSE, ident, line, col)
         elseif ident == "match"
             return Token(TK_MATCH, ident, line, col)
+        elseif ident == "match'"
+            return Token(TK_MATCH_PRIME, ident, line, col)
         elseif ident == "with"
             return Token(TK_WITH, ident, line, col)
         elseif ident == "nil"

@@ -136,6 +136,11 @@ function parse_expr(p::Parser)::LFExpr
         return parse_match(p)
     end
 
+    # match' expression (non-destructive)
+    if tok.type == TK_MATCH_PRIME
+        return parse_matchprime(p)
+    end
+
     # Primary expression
     return parse_primary_expr(p)
 end
@@ -163,10 +168,9 @@ end
 
 function parse_match(p::Parser)::LFExpr
     expect!(p, TK_MATCH)
-    matched_expr = parse_primary_expr(p)  # Parse expression instead of just identifier
+    matched_expr = parse_primary_expr(p)
     expect!(p, TK_WITH)
 
-    # Check what kind of match
     tok = peek(p)
 
     if tok.type == TK_LPAREN
@@ -207,7 +211,7 @@ function parse_match(p::Parser)::LFExpr
             return LFExpr(MatchSum, [matched_expr, inl_var, inl_expr, inr_var, inr_expr])
 
         elseif tok.type == TK_NIL
-            # Match (list)
+            # Match (list) - destructive
             advance!(p)
             expect!(p, TK_ARROW)
             nil_expr = parse_expr(p)
@@ -223,6 +227,77 @@ function parse_match(p::Parser)::LFExpr
             expect!(p, TK_ARROW)
             cons_expr = parse_expr(p)
             return LFExpr(Match, [matched_expr, nil_expr, (h, t), cons_expr])
+
+        else
+            error("Expected 'inl' or 'nil' after '|' at line $(tok.line), col $(tok.col)")
+        end
+
+    else
+        error("Expected '(' or '|' after 'with' at line $(tok.line), col $(tok.col)")
+    end
+end
+
+function parse_matchprime(p::Parser)::LFExpr
+    expect!(p, TK_MATCH_PRIME)
+    matched_expr = parse_primary_expr(p)
+    expect!(p, TK_WITH)
+
+    tok = peek(p)
+
+    if tok.type == TK_LPAREN
+        # MatchPair: match' x with (a, b) => e
+        # Note: MatchPair semantics don't change with match'
+        advance!(p)
+        x1_tok = expect!(p, TK_IDENT)
+        x1 = Symbol(x1_tok.value)
+        expect!(p, TK_COMMA)
+        x2_tok = expect!(p, TK_IDENT)
+        x2 = Symbol(x2_tok.value)
+        expect!(p, TK_RPAREN)
+        expect!(p, TK_ARROW)
+        body = parse_expr(p)
+        return LFExpr(MatchPair, [matched_expr, x1, x2, body])
+
+    elseif tok.type == TK_PIPE
+        advance!(p)
+        tok = peek(p)
+
+        if tok.type == TK_INL
+            # MatchSum doesn't have destructive/non-destructive distinction
+            advance!(p)
+            expect!(p, TK_LPAREN)
+            inl_var_tok = expect!(p, TK_IDENT)
+            inl_var = Symbol(inl_var_tok.value)
+            expect!(p, TK_RPAREN)
+            expect!(p, TK_ARROW)
+            inl_expr = parse_expr(p)
+            expect!(p, TK_PIPE)
+            expect!(p, TK_INR)
+            expect!(p, TK_LPAREN)
+            inr_var_tok = expect!(p, TK_IDENT)
+            inr_var = Symbol(inr_var_tok.value)
+            expect!(p, TK_RPAREN)
+            expect!(p, TK_ARROW)
+            inr_expr = parse_expr(p)
+            return LFExpr(MatchSum, [matched_expr, inl_var, inl_expr, inr_var, inr_expr])
+
+        elseif tok.type == TK_NIL
+            # MatchPrime (list) - non-destructive
+            advance!(p)
+            expect!(p, TK_ARROW)
+            nil_expr = parse_expr(p)
+            expect!(p, TK_PIPE)
+            expect!(p, TK_CONS)
+            expect!(p, TK_LPAREN)
+            h_tok = expect!(p, TK_IDENT)
+            h = Symbol(h_tok.value)
+            expect!(p, TK_COMMA)
+            t_tok = expect!(p, TK_IDENT)
+            t = Symbol(t_tok.value)
+            expect!(p, TK_RPAREN)
+            expect!(p, TK_ARROW)
+            cons_expr = parse_expr(p)
+            return LFExpr(MatchPrime, [matched_expr, nil_expr, (h, t), cons_expr])
 
         else
             error("Expected 'inl' or 'nil' after '|' at line $(tok.line), col $(tok.col)")
