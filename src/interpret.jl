@@ -38,6 +38,9 @@ function eval_expr(
 
     elseif e.head == Var
         x = e.args[1]
+        if !haskey(S, x)
+            error("Undefined variable: $x")
+        end
         return (S[x], state)
 
     elseif e.head == Unit
@@ -207,23 +210,19 @@ function eval_expr(
 
         # Evaluate arguments and bind to parameters
         new_S = Dict{Symbol, LFVal}()
+        current_state = state
         for (param, arg_expr) in zip(func_def.params, arg_exprs)
-            # Each argument can be an expression or a Symbol
-            if arg_expr isa Symbol
-                if !haskey(S, arg_expr)
-                    error("Undefined variable: $arg_expr")
-                end
-                new_S[param] = S[arg_expr]
-            else
-                # Evaluate the argument expression
-                arg_val, new_state = recurse(arg_expr, state)
-                state = new_state
-                new_S[param] = arg_val
-            end
+            # Evaluate the argument expression
+            arg_val, new_state = recurse(arg_expr, current_state)
+            current_state = new_state
+            new_S[param] = arg_val
         end
 
-        new_state = InterpreterState(new_S, state.σ, state.m)
-        return recurse(func_def.body, new_state)
+        func_state = InterpreterState(new_S, current_state.σ, current_state.m)
+        result_val, result_state = recurse(func_def.body, func_state)
+        # Restore the caller's stack after function call (preserving heap and memory from result)
+        final_state = InterpreterState(current_state.S, result_state.σ, result_state.m)
+        return (result_val, final_state)
 
     else
         error("Unkown expression head: $(e.head)")
